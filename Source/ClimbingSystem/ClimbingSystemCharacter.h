@@ -20,6 +20,14 @@ class AClimbingSystemCharacter : public ACharacter
 	GENERATED_BODY()
 
 public:
+
+	/**
+	 * Called from CharacterMovementComponent to notify the character that the movement mode has changed.
+	 * @param	PrevMovementMode	Movement mode before the change
+	 * @param	PrevCustomMode		Custom mode before the change (applicable if PrevMovementMode is Custom)
+	 */
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+
 	AClimbingSystemCharacter(const FObjectInitializer& ObjectInitializer);
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }

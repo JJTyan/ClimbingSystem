@@ -10,9 +10,25 @@
 #include "EnhancedInputSubsystems.h"
 #include "CLSMovementComponent.h"
 
-
 //////////////////////////////////////////////////////////////////////////
 // AClimbingSystemCharacter
+
+void AClimbingSystemCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode /*= 0*/)
+{
+	Super::OnMovementModeChanged(PrevMovementMode,PreviousCustomMode);
+
+	if (CLSMovementComponent->IsClimbing())
+	{
+		GetCapsuleComponent()->SetCapsuleHalfHeight(48.f);
+	}
+	//if we exiting climbing
+	else if (!CLSMovementComponent->IsClimbing() && PrevMovementMode == MOVE_Custom && PreviousCustomMode == (uint8)ECustomMovementMode::MOVE_Climb)
+	{
+		GetCapsuleComponent()->SetCapsuleHalfHeight(96.f);
+	}
+}
+
+
 
 AClimbingSystemCharacter::AClimbingSystemCharacter(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<UCLSMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
