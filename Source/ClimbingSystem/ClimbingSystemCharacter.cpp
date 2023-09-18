@@ -9,6 +9,9 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "CLSMovementComponent.h"
+#include "MotionWarpingComponent.h"
+
+#include "CLDebugHelpers.h" 
 
 //////////////////////////////////////////////////////////////////////////
 // AClimbingSystemCharacter
@@ -21,14 +24,18 @@ void AClimbingSystemCharacter::OnMovementModeChanged(EMovementMode PrevMovementM
 	{
 		GetCapsuleComponent()->SetCapsuleHalfHeight(48.f);
 	}
+
 	//if we exiting climbing
 	else if (!CLSMovementComponent->IsClimbing() && PrevMovementMode == MOVE_Custom && PreviousCustomMode == (uint8)ECustomMovementMode::MOVE_Climb)
 	{
 		GetCapsuleComponent()->SetCapsuleHalfHeight(96.f);
+
+		//restore vertical position of character in case we exited climbing at angle
+		const FRotator exitClimbRotation {GetActorRotation()};
+		const FRotator desiredRotation {0.f,exitClimbRotation.Yaw, exitClimbRotation.Roll};
+		SetActorRotation(desiredRotation);
 	}
 }
-
-
 
 AClimbingSystemCharacter::AClimbingSystemCharacter(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer.SetDefaultSubobjectClass<UCLSMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
@@ -65,8 +72,7 @@ AClimbingSystemCharacter::AClimbingSystemCharacter(const FObjectInitializer& Obj
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
-	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
-	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
+	MotionWarpingComponent = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComponent"));
 }
 
 void AClimbingSystemCharacter::BeginPlay()
@@ -81,6 +87,9 @@ void AClimbingSystemCharacter::BeginPlay()
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
 	}
+
+	CLSMovementComponent->OnEnterClimbStateDelegate.BindUObject(this,&ThisClass::OnPlayerEnteredClimbState);
+	CLSMovementComponent->OnExitClimbStateDelegate.BindUObject(this,&ThisClass::OnPlayerExitedClimbState);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -96,21 +105,25 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(class UInputComponent* 
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
 		//Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::GroundMovement);
+		EnhancedInputComponent->BindAction(ClimbMoveAction, ETriggerEvent::Triggered, this, &ThisClass::ClimbingMovement);
 
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ThisClass::Look);
 
 		//Climbing
 		EnhancedInputComponent->BindAction(ClimbAction, ETriggerEvent::Started, this, &ThisClass::OnClimbActionStarted);
+
+		//Climbing
+		EnhancedInputComponent->BindAction(ClimbHopAction, ETriggerEvent::Started, this, &ThisClass::OnHopActionStarted);
 	}
 
 }
 
-void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
+void AClimbingSystemCharacter::GroundMovement(const FInputActionValue& Value)
 {
 	// input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
+	const FVector2D MovementVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
@@ -120,7 +133,7 @@ void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 
 		// get forward vector
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	
+
 		// get right vector 
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -128,6 +141,22 @@ void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 		AddMovementInput(ForwardDirection, MovementVector.Y);
 		AddMovementInput(RightDirection, MovementVector.X);
 	}
+}
+
+void AClimbingSystemCharacter::ClimbingMovement(const FInputActionValue& Value)
+{
+	// input is a Vector2D
+	const FVector2D MovementVector {Value.Get<FVector2D>()};
+
+	//the direction where player will move when pressed Forward. Can be straight up or at angle depending on climbing sutface
+	//cross prod of inversed surface normal (as normal is from surface to player and we need it other way) and right vector
+	const FVector ForwardDirection{FVector::CrossProduct(-CLSMovementComponent->GetClimbSurfaceNormal(),GetRootComponent()->GetRightVector())};
+
+	const FVector RightDirection{FVector::CrossProduct(-CLSMovementComponent->GetClimbSurfaceNormal(),-GetRootComponent()->GetUpVector()) };
+	
+	// add movement 
+	AddMovementInput(ForwardDirection, MovementVector.Y);
+	AddMovementInput(RightDirection, MovementVector.X);
 }
 
 void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
@@ -149,5 +178,40 @@ void AClimbingSystemCharacter::OnClimbActionStarted(const FInputActionValue& Val
 
 }
 
+void AClimbingSystemCharacter::OnHopActionStarted(const FInputActionValue& Value)
+{
+	Debug::Print("Hop action");
+}
 
+void AClimbingSystemCharacter::OnPlayerEnteredClimbState()
+{
+	AddInputMappingContext(ClimbingMappingContext,1);
+}
+
+void AClimbingSystemCharacter::AddInputMappingContext(UInputMappingContext* NewContext, int32 Priority)
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+		{
+			Subsystem->AddMappingContext(NewContext, Priority);
+		}
+	}
+}
+
+void AClimbingSystemCharacter::OnPlayerExitedClimbState()
+{
+	RemoveInputMappingContext(ClimbingMappingContext);
+}
+
+void AClimbingSystemCharacter::RemoveInputMappingContext(UInputMappingContext* Context)
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+		{
+			Subsystem->RemoveMappingContext(Context);
+		}
+	}
+}
 

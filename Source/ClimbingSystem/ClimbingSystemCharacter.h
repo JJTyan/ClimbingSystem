@@ -12,6 +12,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 class UCLSMovementComponent;
+class UMotionWarpingComponent;
 
 
 UCLASS(config=Game)
@@ -33,6 +34,7 @@ public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; } 
+	FORCEINLINE UMotionWarpingComponent* GetMotionWarpingComponent() const {return MotionWarpingComponent;};
 
 protected:
 	// APawn interface
@@ -43,13 +45,25 @@ protected:
 
 private:
 	/** Called for movement input */
-	void Move(const FInputActionValue& Value);
+	void GroundMovement(const FInputActionValue& Value);
+	void ClimbingMovement(const FInputActionValue& Value);
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
 
 	/** Called when activate climbing from input */
 	void OnClimbActionStarted(const FInputActionValue& Value);
+
+	/** Called when activate hop from input */
+	void OnHopActionStarted(const FInputActionValue& Value);
+
+	//Callbacks//
+
+	void OnPlayerEnteredClimbState();
+	void OnPlayerExitedClimbState();
+
+	void AddInputMappingContext(UInputMappingContext* NewContext, int32 Priority);
+	void RemoveInputMappingContext(UInputMappingContext* NewContext);
 
 private:
 
@@ -63,10 +77,17 @@ private:
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
+	UMotionWarpingComponent* MotionWarpingComponent;
 	
 	/** MappingContext */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputMappingContext* DefaultMappingContext;
+
+	/** MappingContext */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputMappingContext* ClimbingMappingContext;
 
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -75,6 +96,14 @@ private:
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* MoveAction;
+
+	/** Move Input Action while climbing*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* ClimbMoveAction;
+
+	/** Move Input Action while climbing*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* ClimbHopAction;
 
 	/** Look Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
